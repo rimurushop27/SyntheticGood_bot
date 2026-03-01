@@ -12,32 +12,15 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 // Store user settings (in production, use database)
 const userSettings = {};
 
-// Core system instruction (always applied - BASIC VERSION)
-const CORE_INSTRUCTION = `Analyze the image in extreme detail and convert it into a perfect AI image generation prompt.
+// NO core instruction - user provides EVERYTHING via /settings
+const CORE_INSTRUCTION = '';
 
-ANALYZE EVERYTHING:
-- Photo type, subject, hair, face, expression, outfit, accessories, pose, background, lighting, camera style
+// Default instruction when user hasn't set anything yet
+const DEFAULT_INSTRUCTION = `Analyze this image in detail and convert it into a perfect AI image generation prompt. Focus on: photo type, subject, appearance, clothing, pose, background, lighting, and camera style. Output ONLY the prompt text, nothing else.`;
 
-CRITICAL RULES:
-- Use "woman/man/girl/boy" only, NO age numbers or body measurements
-- NO sensitive or explicit terms
-- Focus on style, fashion, mood, artistic elements
-
-OUTPUT FORMAT:
-Single flowing paragraph: [Photo type] of [subject], ((Keep face, skin tone, body proportions exactly the same as the reference image)), [all details]...
-
-OUTPUT RULES - EXTREMELY IMPORTANT:
-- Return ONLY the prompt text
-- NO explanations, NO preamble, NO markdown, NO "Here's the prompt:", NO extra sentences
-- Just the raw prompt that can be copied and pasted directly into an AI image generator
-- Start directly with the photo type (e.g., "Candid photo of..." or "Professional portrait of...")`;
-
-// Default custom instruction (empty - user can modify via /settings)
-const DEFAULT_CUSTOM_INSTRUCTION = '';
-
-// Get user's custom instruction
+// Get user's custom instruction (or default if not set)
 function getUserInstruction(userId) {
-  return userSettings[userId]?.customInstruction || DEFAULT_CUSTOM_INSTRUCTION;
+  return userSettings[userId]?.customInstruction || DEFAULT_INSTRUCTION;
 }
 
 // Set user's custom instruction
@@ -55,11 +38,8 @@ async function analyzeImage(imageBuffer, userId) {
     const base64Image = imageBuffer.toString('base64');
     const dataUrl = `data:image/jpeg;base64,${base64Image}`;
     
-    // Combine core + custom instructions
-    const customInstruction = getUserInstruction(userId);
-    const fullInstruction = customInstruction 
-      ? `${CORE_INSTRUCTION}\n\nADDITIONAL USER REQUIREMENTS:\n${customInstruction}`
-      : CORE_INSTRUCTION;
+    // Use ONLY user's instruction (no core instruction)
+    const userInstruction = getUserInstruction(userId);
     
     // Call Groq API
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -73,7 +53,7 @@ async function analyzeImage(imageBuffer, userId) {
         messages: [
           {
             role: 'system',
-            content: fullInstruction
+            content: userInstruction
           },
           {
             role: 'user',
@@ -84,7 +64,7 @@ async function analyzeImage(imageBuffer, userId) {
               },
               {
                 type: 'text',
-                text: 'Analyze this image and output ONLY the final prompt. No introduction, no explanation, no markdown formatting. Just the pure prompt text starting directly with the photo type.'
+                text: 'Follow the system instruction exactly. Output only the final result with no additional text.'
               }
             ]
           }
@@ -123,22 +103,22 @@ bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
   const welcomeMessage = `🎨 *SyntheticGood Bot*
 
-Convert images into perfect AI generation prompts.
+Convert images to AI prompts with YOUR custom instructions.
 
 *Quick Start:*
-📸 Send any photo → Get instant prompt (ready to copy-paste)
+📸 Send photo → Get prompt
 
-*Commands:*
-⚙️ /settings - Add your custom instructions
-🔄 /reset - Clear custom instructions
+*Control Everything:*
+⚙️ /settings - Set YOUR system instruction
+🔄 /reset - Back to default
 ❓ /help - Full guide
 
 *How it works:*
-✓ Built-in: Detailed image analysis
-✓ Custom: Add your own requirements via /settings
-✓ Output: 100% pure prompt, no extra text
+You control 100% of the prompt generation by setting your own instruction via /settings.
 
-Just send a photo! 🚀`;
+Default instruction is basic. Customize it for best results!
+
+Send a photo or use /settings first! 🚀`;
 
   bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
 });
@@ -149,41 +129,37 @@ bot.onText(/\/help/, (msg) => {
   bot.sendMessage(chatId, `❓ *Help Guide*
 
 *Basic Usage:*
-Send any photo → Bot analyzes → Sends pure prompt text (ready to copy-paste)
+Send photo → Bot uses your instruction → Sends result
 
 *Commands:*
-/start - Welcome & info
+/start - Welcome
 /help - This guide
-/settings - View/update custom instructions
-/settings <text> - Set custom instruction
-/reset - Clear custom instructions
+/settings - View/set your instruction
+/settings <text> - Set new instruction
+/reset - Back to default
 
-*System Instructions:*
+*System Instruction:*
 
-**Built-in (always active):**
-- Deep image analysis
-- Detail extraction
-- Perfect prompt structure
-- Safe output (no sensitive terms)
+YOU control everything via /settings.
 
-**Custom (you control via /settings):**
-Add your own requirements like:
-• "Always use cinematic language"
-• "Focus on lighting and atmosphere"
-• "Mention camera settings"
-• "Use dramatic descriptions"
+**Default (if you don't set custom):**
+Basic instruction for simple prompt generation.
 
-Custom instructions are ADDED to the built-in system.
+**Custom (recommended):**
+Set your own complete instruction for full control.
+
+*Example custom instruction:*
+\`\`\`
+Analyze the image in detail. Create a perfect AI image generation prompt. Include: photo type, subject (use woman/man/girl/boy only, no ages), hair, face, outfit, accessories, pose, background, lighting, camera style. Format as one flowing paragraph. Start with photo type. Add: ((Keep face, skin tone, body proportions exactly the same as reference image)) after subject. Output ONLY the prompt, no explanations.
+\`\`\`
+
+*Set it with:*
+/settings <paste your instruction>
 
 *Output:*
-✓ 100% prompt only
-✓ No formatting, no extras
-✓ Copy-paste ready for any AI image generator
-
-*Tips:*
-• Clear photos = better prompts
-• One photo at a time
-• Use /settings to fine-tune style`, { parse_mode: 'Markdown' });
+✓ 100% based on YOUR instruction
+✓ Copy-paste ready
+✓ No formatting, pure text`, { parse_mode: 'Markdown' });
 });
 
 // Command: /settings
@@ -193,41 +169,46 @@ bot.onText(/\/settings(?:\s+(.+))?/, (msg, match) => {
   const newInstruction = match[1]?.trim();
   
   if (newInstruction) {
-    // Set new custom instruction
+    // Set new instruction
     setUserInstruction(userId, newInstruction);
-    bot.sendMessage(chatId, `✅ *Custom instruction saved!*
+    bot.sendMessage(chatId, `✅ *System instruction updated!*
 
 Your instruction:
 "${newInstruction}"
 
-This will be applied on top of the core analysis system.
+This is now the ONLY instruction the bot will use for analyzing your images.
 
 Send a photo to test it!`, { parse_mode: 'Markdown' });
   } else {
     // Show current instruction
     const current = getUserInstruction(userId);
-    if (current) {
-      bot.sendMessage(chatId, `⚙️ *Your Current Custom Instruction:*
+    const isDefault = !userSettings[userId]?.customInstruction;
+    
+    if (isDefault) {
+      bot.sendMessage(chatId, `⚙️ *System Instruction (Default)*
+
+Current instruction:
+"${current}"
+
+This is the default basic instruction.
+
+*To set your own instruction:*
+/settings <your full instruction here>
+
+*Example:*
+/settings Analyze the image and create a detailed prompt. Focus on: photo type, subject (use woman/man/girl/boy only), appearance, outfit, pose, background, lighting, camera style. Format as one paragraph starting with photo type. Output ONLY the prompt, no extra text.
+
+Your custom instruction will COMPLETELY REPLACE the default.`, { parse_mode: 'Markdown' });
+    } else {
+      bot.sendMessage(chatId, `⚙️ *Your Current System Instruction:*
 
 "${current}"
 
 *To update:*
 /settings <your new instruction>
 
-*To clear:*
+*To reset to default:*
 /reset`, { parse_mode: 'Markdown' });
-    } else {
-      bot.sendMessage(chatId, `⚙️ *Custom Instructions*
-
-You haven't set any custom instructions yet.
-
-*To add custom instructions:*
-/settings <your instruction>
-
-*Example:*
-/settings Always mention camera settings and use cinematic language
-
-This will be added on top of the built-in analysis system.`, { parse_mode: 'Markdown' });
     }
   }
 });
@@ -239,9 +220,16 @@ bot.onText(/\/reset/, (msg) => {
   
   if (userSettings[userId]?.customInstruction) {
     delete userSettings[userId].customInstruction;
-    bot.sendMessage(chatId, '🔄 Custom instructions cleared! Using default system only.', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, `🔄 *Reset to default instruction!*
+
+Now using: "${DEFAULT_INSTRUCTION}"
+
+You can set your own instruction anytime with:
+/settings <your instruction>`, { parse_mode: 'Markdown' });
   } else {
-    bot.sendMessage(chatId, 'ℹ️ You don\'t have any custom instructions set.', { parse_mode: 'Markdown' });
+    bot.sendMessage(chatId, `ℹ️ Already using default instruction.
+
+Current: "${DEFAULT_INSTRUCTION}"`, { parse_mode: 'Markdown' });
   }
 });
 
