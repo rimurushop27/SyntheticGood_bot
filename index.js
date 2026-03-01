@@ -12,36 +12,32 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 // Store user settings (in production, use database)
 const userSettings = {};
 
-// Core system instruction (always applied)
-const CORE_INSTRUCTION = `You are an expert AI prompt engineer. Your task is to analyze images and convert them into highly detailed, accurate AI image generation prompts.
+// Core system instruction (always applied - BASIC VERSION)
+const CORE_INSTRUCTION = `Analyze the image in extreme detail and convert it into a perfect AI image generation prompt.
 
-ANALYSIS REQUIREMENTS:
-- Examine every visible detail thoroughly
-- Photo type (realistic, candid, selfie, portrait, studio shot, etc.)
-- Subject: use only "woman" or "man" or "girl" or "boy" — never mention age numbers, body measurements, or explicit terms
-- Hair: color, length, texture, style (wavy, straight, bun, ponytail, braided, etc.)
-- Face: expression, makeup style, skin tone (neutral descriptive terms only)
-- Outfit: specific style name, clothing type, color, pattern, fabric
-- Accessories: jewelry, bag, hat, glasses, shoes with style and color
-- Pose and body language
-- Setting/background: location, environment, lighting, time of day, atmosphere
-- Photography style: lens feel, depth of field, color grading, film style
+ANALYZE EVERYTHING:
+- Photo type, subject, hair, face, expression, outfit, accessories, pose, background, lighting, camera style
 
-STRICT RULES:
-- NEVER use sensitive terms that could trigger safety filters
-- NO body measurements, body part sizes, age numbers, or explicit content
-- Focus on style, fashion, mood, and artistic elements
-- Replace sensitive descriptors with neutral alternatives
+CRITICAL RULES:
+- Use "woman/man/girl/boy" only, NO age numbers or body measurements
+- NO sensitive or explicit terms
+- Focus on style, fashion, mood, artistic elements
 
-OUTPUT FORMAT (CRITICAL):
-Write as ONE flowing paragraph in this structure:
-[Photo type] of [woman/man/girl/boy], ((Keep face, skin tone, body proportions exactly the same as the reference image)), [hair], [expression & makeup], [outfit with specific details], [accessories], [pose], [background & setting], [lighting & atmosphere], [photography style], [color grading]
+OUTPUT FORMAT:
+Single flowing paragraph: [Photo type] of [subject], ((Keep face, skin tone, body proportions exactly the same as the reference image)), [all details]...
 
-OUTPUT ONLY THE FINAL PROMPT. No explanations, no preamble, no additional text.`;
+OUTPUT RULES - EXTREMELY IMPORTANT:
+- Return ONLY the prompt text
+- NO explanations, NO preamble, NO markdown, NO "Here's the prompt:", NO extra sentences
+- Just the raw prompt that can be copied and pasted directly into an AI image generator
+- Start directly with the photo type (e.g., "Candid photo of..." or "Professional portrait of...")`;
+
+// Default custom instruction (empty - user can modify via /settings)
+const DEFAULT_CUSTOM_INSTRUCTION = '';
 
 // Get user's custom instruction
 function getUserInstruction(userId) {
-  return userSettings[userId]?.customInstruction || '';
+  return userSettings[userId]?.customInstruction || DEFAULT_CUSTOM_INSTRUCTION;
 }
 
 // Set user's custom instruction
@@ -88,12 +84,12 @@ async function analyzeImage(imageBuffer, userId) {
               },
               {
                 type: 'text',
-                text: 'Analyze this image and output ONLY the final prompt. No explanations.'
+                text: 'Analyze this image and output ONLY the final prompt. No introduction, no explanation, no markdown formatting. Just the pure prompt text starting directly with the photo type.'
               }
             ]
           }
         ],
-        max_tokens: 1024,
+        max_tokens: 1500,
         temperature: 0.7
       })
     });
@@ -104,7 +100,17 @@ async function analyzeImage(imageBuffer, userId) {
     }
 
     const result = await response.json();
-    return result.choices[0].message.content.trim();
+    let prompt = result.choices[0].message.content.trim();
+    
+    // Clean up any potential formatting artifacts
+    prompt = prompt
+      .replace(/^["']|["']$/g, '') // Remove quotes at start/end
+      .replace(/^Here's the prompt:?\s*/i, '') // Remove "Here's the prompt:"
+      .replace(/^Prompt:?\s*/i, '') // Remove "Prompt:"
+      .replace(/^\*\*.*?\*\*:?\s*/i, '') // Remove markdown headers
+      .trim();
+    
+    return prompt;
     
   } catch (error) {
     console.error('Analysis error:', error);
@@ -115,23 +121,24 @@ async function analyzeImage(imageBuffer, userId) {
 // Command: /start
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  const welcomeMessage = `🎨 *Welcome to SyntheticGood Bot!*
+  const welcomeMessage = `🎨 *SyntheticGood Bot*
 
-I convert images into detailed AI generation prompts.
+Convert images into perfect AI generation prompts.
 
-*How to use:*
-📸 Send or forward any photo → I'll analyze it automatically
-⚙️ /settings - Add custom instructions
+*Quick Start:*
+📸 Send any photo → Get instant prompt (ready to copy-paste)
+
+*Commands:*
+⚙️ /settings - Add your custom instructions
 🔄 /reset - Clear custom instructions
-❓ /help - Show this message
+❓ /help - Full guide
 
-*Built-in Analysis:*
-✓ Detailed visual description
-✓ Photography style & composition
-✓ Safe, filter-friendly output
-✓ Professional prompt format
+*How it works:*
+✓ Built-in: Detailed image analysis
+✓ Custom: Add your own requirements via /settings
+✓ Output: 100% pure prompt, no extra text
 
-Just send a photo to start! 🚀`;
+Just send a photo! 🚀`;
 
   bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'Markdown' });
 });
@@ -139,30 +146,44 @@ Just send a photo to start! 🚀`;
 // Command: /help
 bot.onText(/\/help/, (msg) => {
   const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `❓ *Help & Commands*
+  bot.sendMessage(chatId, `❓ *Help Guide*
 
 *Basic Usage:*
-Just send any photo! I'll automatically analyze it.
+Send any photo → Bot analyzes → Sends pure prompt text (ready to copy-paste)
 
 *Commands:*
-/start - Welcome message
-/help - This help message
-/settings - View or update custom instructions
+/start - Welcome & info
+/help - This guide
+/settings - View/update custom instructions
+/settings <text> - Set custom instruction
 /reset - Clear custom instructions
 
-*Custom Instructions:*
-Add your own requirements like:
-• Specific art style preferences
-• Output language
-• Extra details to include/exclude
-• Format preferences
+*System Instructions:*
 
-Custom instructions are added ON TOP of my core analysis system.
+**Built-in (always active):**
+- Deep image analysis
+- Detail extraction
+- Perfect prompt structure
+- Safe output (no sensitive terms)
+
+**Custom (you control via /settings):**
+Add your own requirements like:
+• "Always use cinematic language"
+• "Focus on lighting and atmosphere"
+• "Mention camera settings"
+• "Use dramatic descriptions"
+
+Custom instructions are ADDED to the built-in system.
+
+*Output:*
+✓ 100% prompt only
+✓ No formatting, no extras
+✓ Copy-paste ready for any AI image generator
 
 *Tips:*
-✓ High quality photos = better prompts
-✓ Clear subjects work best
-✓ One photo at a time for accuracy`, { parse_mode: 'Markdown' });
+• Clear photos = better prompts
+• One photo at a time
+• Use /settings to fine-tune style`, { parse_mode: 'Markdown' });
 });
 
 // Command: /settings
@@ -248,16 +269,12 @@ bot.on('photo', async (msg) => {
     // Delete processing message
     await bot.deleteMessage(chatId, processingMsg.message_id);
     
-    // Send result
-    await bot.sendMessage(chatId, `✨ *Generated Prompt:*
-
-${prompt}
-
-_Use /settings to add custom instructions_`, { parse_mode: 'Markdown' });
+    // Send result - CLEAN PROMPT ONLY, NO MARKDOWN, NO FORMATTING
+    await bot.sendMessage(chatId, prompt);
     
   } catch (error) {
     console.error('Photo processing error:', error);
-    await bot.sendMessage(chatId, `❌ *Error:* ${error.message}\n\nPlease try again or contact support.`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `❌ Error: ${error.message}\n\nPlease try again.`, { parse_mode: 'Markdown' });
   }
 });
 
@@ -283,15 +300,11 @@ bot.on('document', async (msg) => {
     const prompt = await analyzeImage(imageBuffer, userId);
     
     await bot.deleteMessage(chatId, processingMsg.message_id);
-    await bot.sendMessage(chatId, `✨ *Generated Prompt:*
-
-${prompt}
-
-_Use /settings to add custom instructions_`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, prompt);
     
   } catch (error) {
     console.error('Document processing error:', error);
-    await bot.sendMessage(chatId, `❌ *Error:* ${error.message}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `❌ Error: ${error.message}`, { parse_mode: 'Markdown' });
   }
 });
 
